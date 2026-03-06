@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" class="spectrum spectrum--light spectrum--medium">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <title>Log Tail</title>
+  <link rel="stylesheet" href="../node_modules/@spectrum-css/tokens/dist/css/index.css">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .log-tail-container { padding: 16px; height: 100vh; display: flex; flex-direction: column; }
+    .log-tail-bar { margin-bottom: 10px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .log-tail-status { color: var(--spectrum-neutral-subdued-content-color-default); font-size: 0.875rem; }
+    .log-tail-status.live { color: var(--spectrum-positive-visual-color); }
+    .log-tail-status.error { color: var(--spectrum-negative-visual-color); }
+    .log-tail-pre {
+      flex: 1;
+      margin: 0;
+      padding: 12px;
+      background: var(--spectrum-background-layer-1-color);
+      border: 1px solid var(--spectrum-neutral-subdued-background-color-hover);
+      border-radius: 6px;
+      overflow: auto;
+      font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--spectrum-neutral-content-color-default);
+    }
+    .log-tail-pre:empty::before { content: 'Connecting…'; color: var(--spectrum-neutral-subdued-content-color-default); }
+  </style>
+</head>
+<body>
+  <div class="log-tail-container">
+    <div class="log-tail-bar">
+      <span id="logTailStatus" class="log-tail-status">Connecting…</span>
+    </div>
+    <pre id="logTailPre" class="log-tail-pre"></pre>
+  </div>
+  <script>
+    const api = window.electronAPI;
+    const C = api?.constants || {};
+    const pre = document.getElementById('logTailPre');
+    const status = document.getElementById('logTailStatus');
+
+    const append = (text) => {
+      pre.textContent += text;
+      pre.scrollTop = pre.scrollHeight;
+    };
+
+    const setStatus = (msg, cls) => {
+      status.textContent = msg;
+      status.className = 'log-tail-status' + (cls ? ' ' + cls : '');
+    };
+
+    if (api) {
+      api.onLogTailChunk(append);
+      api.onLogTailDone(() => setStatus(C.UI_EMPTY?.FINISHED || 'Finished', ''));
+      api.onLogTailError((err) => setStatus('Error: ' + (err?.message || err), 'error'));
+      api.onLogTailParams(async (params) => {
+        console.log('[Log Tail] Received params:', params);
+        const { orgId, programId, environmentId, service, name, logLabel } = params;
+        setStatus(C.UI_EMPTY?.FETCHING_TAIL_URL || 'Fetching tail URL…', '');
+        try {
+          const tailUrl = await api.getEnvironmentLogTailUrl(orgId, programId, environmentId, service, name);
+          setStatus('Tailing ' + (logLabel || service + '/' + name) + ' (live)', 'live');
+          await api.startLogTail(tailUrl);
+        } catch (e) {
+          setStatus('Error: ' + e.message, 'error');
+          append('\n' + e.message);
+        }
+      });
+    } else {
+      setStatus(C.UI_EMPTY?.API_NOT_AVAILABLE || 'API not available', 'error');
+    }
+  </script>
+</body>
+</html>

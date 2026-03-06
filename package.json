@@ -1,0 +1,79 @@
+{
+  "name": "cloud-manager-app",
+  "version": "1.0.0",
+  "description": "Electron app for Adobe Cloud Manager API - Programs, Pipelines, and Executions",
+  "main": "src/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run",
+    "test:serve": "serve -l 8080",
+    "test:e2e": "start-server-and-test test:serve http://localhost:8080 cypress:run"
+  },
+  "keywords": [
+    "adobe",
+    "cloud-manager",
+    "electron"
+  ],
+  "build": {
+    "appId": "com.cloudmanager.app",
+    "productName": "Adobe Cloud Manager",
+    "copyright": "Copyright © 2025",
+    "files": [
+      "src/**/*",
+      "icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@spectrum-css/tokens": "^16.0.2",
+    "buffer-from": "^1.1.2",
+    "electron-store": "^8.1.0"
+  },
+  "devDependencies": {
+    "cypress": "^13.6.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^25.1.8",
+    "jest": "^29.7.0",
+    "serve": "^14.2.0",
+    "start-server-and-test": "^2.0.3"
+  }
+}

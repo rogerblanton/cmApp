@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" class="spectrum spectrum--light spectrum--medium">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adobe Cloud Manager (Test)</title>
+  <link rel="stylesheet" href="../../node_modules/@spectrum-css/tokens/dist/css/index.css">
+  <link rel="stylesheet" href="../../src/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Adobe Cloud Manager</h1>
+      <div class="org-switcher">
+        <label>Organization:</label>
+        <select id="orgSelect" disabled>
+          <option value="">— Add org first —</option>
+        </select>
+        <button id="addOrgBtn" type="button">+ Add Org</button>
+        <button id="manageOrgsBtn" type="button">Manage Orgs</button>
+      </div>
+    </header>
+    <main class="main">
+      <aside class="sidebar">
+        <section class="nav-section">
+          <h2>Programs</h2>
+          <div id="programList" class="list">
+            <p class="empty">Select an org and click Refresh</p>
+          </div>
+          <button id="refreshPrograms" type="button">Refresh Programs</button>
+        </section>
+        <section class="nav-section" id="pipelineSection" style="display:none">
+          <h2>Pipelines</h2>
+          <div id="pipelineList" class="list"></div>
+        </section>
+        <section class="nav-section" id="environmentSection" style="display:none">
+          <h2>Environments</h2>
+          <div id="environmentList" class="list"></div>
+        </section>
+      </aside>
+      <div class="content">
+        <div id="welcome" class="welcome">
+          <p>Add an organization and select it to get started.</p>
+          <p>Configure your Adobe Developer Console credentials in Manage Orgs.</p>
+        </div>
+        <div id="detailPanel" class="detail-panel" style="display:none">
+          <div id="breadcrumb" class="breadcrumb"></div>
+          <div id="detailContent" class="detail-content"></div>
+        </div>
+        <div id="errorBox" class="error-box" style="display:none"></div>
+      </div>
+    </main>
+  </div>
+  <div id="orgModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 id="orgModalTitle">Add Organization</h2>
+      <form id="orgForm">
+        <input type="hidden" id="orgId">
+        <label>Display Name</label>
+        <input type="text" id="orgName" placeholder="e.g. Production Org" required>
+        <label>Organization ID</label>
+        <input type="text" id="orgOrganizationId" placeholder="xxxxxxxx@AdobeOrg" required>
+        <label>Client ID (API Key)</label>
+        <input type="text" id="orgClientId" placeholder="From Adobe Developer Console" required>
+        <label>Client Secret</label>
+        <input type="password" id="orgClientSecret" placeholder="From Adobe Developer Console" required>
+        <label>Scope (optional)</label>
+        <input type="text" id="orgScope" placeholder="">
+        <div class="form-actions">
+          <button type="submit">Save</button>
+          <button type="button" id="orgFormCancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="manageOrgsModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2>Manage Organizations</h2>
+      <div id="manageOrgsList" class="manage-orgs-list"></div>
+      <div class="form-actions">
+        <button type="button" id="manageOrgsClose">Close</button>
+      </div>
+    </div>
+  </div>
+  <script src="mock-api.js"></script>
+  <script src="../../src/renderer.js"></script>
+</body>
+</html>

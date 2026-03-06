@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" class="spectrum spectrum--light spectrum--medium">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://*.adobe.io https://*.adobelogin.com">
+  <title>Adobe Cloud Manager</title>
+  <link rel="stylesheet" href="../node_modules/@spectrum-css/tokens/dist/css/index.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Adobe Cloud Manager</h1>
+      <div class="org-switcher">
+        <label>Organization:</label>
+        <select id="orgSelect" disabled>
+          <option value="">— Add org first —</option>
+        </select>
+        <button id="addOrgBtn" type="button" class="btn">+ Add Org</button>
+        <button id="manageOrgsBtn" type="button" class="btn">Manage Orgs</button>
+        <button id="settingsBtn" type="button" class="btn btn-icon" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="sidebar">
+        <section class="nav-section">
+          <h2>Programs</h2>
+          <div id="programList" class="list">
+            <p class="empty">Select an org and click Refresh</p>
+          </div>
+          <button id="refreshPrograms" type="button" class="btn">Refresh Programs</button>
+        </section>
+        <section class="nav-section" id="pipelineSection" style="display:none">
+          <h2>Pipelines</h2>
+          <div id="pipelineList" class="list"></div>
+        </section>
+        <section class="nav-section" id="environmentSection" style="display:none">
+          <h2>Environments</h2>
+          <div id="environmentList" class="list"></div>
+        </section>
+      </aside>
+      <div class="content">
+        <div id="welcome" class="welcome">
+          <p>Add an organization and select it to get started.</p>
+          <p>Configure your Adobe Developer Console credentials in Manage Orgs.</p>
+        </div>
+        <div id="detailPanel" class="detail-panel" style="display:none">
+          <div id="breadcrumb" class="breadcrumb"></div>
+          <div id="detailContent" class="detail-content"></div>
+        </div>
+        <div id="errorBox" class="error-box" style="display:none"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Org Modal -->
+  <div id="orgModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2 id="orgModalTitle">Add Organization</h2>
+      <form id="orgForm">
+        <input type="hidden" id="orgId">
+        <label>Display Name</label>
+        <input type="text" id="orgName" class="input" placeholder="e.g. Production Org" required>
+        <label>Organization ID</label>
+        <input type="text" id="orgOrganizationId" class="input" placeholder="xxxxxxxx@AdobeOrg" required>
+        <label>Client ID (API Key)</label>
+        <input type="text" id="orgClientId" class="input" placeholder="From Adobe Developer Console" required>
+        <label>Client Secret</label>
+        <input type="password" id="orgClientSecret" class="input" placeholder="From Adobe Developer Console" required>
+        <label>Scope (optional, defaults to Cloud Manager)</label>
+        <input type="text" id="orgScope" class="input" placeholder="https://ims-na1.adobelogin.com/s/ent_cloudmgr_sdk">
+        <label>Journal API Endpoint (optional, for event notifications)</label>
+        <input type="text" id="orgJournalEndpoint" class="input" placeholder="e.g. https://cloudmanager.adobe.io/api/journal">
+        <div class="form-actions">
+          <button type="submit" class="btn">Save</button>
+          <button type="button" id="orgFormCancel" class="btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Manage Orgs Modal -->
+  <div id="manageOrgsModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2>Manage Organizations</h2>
+      <div id="manageOrgsList" class="manage-orgs-list"></div>
+      <div class="form-actions">
+        <button type="button" id="manageOrgsClose" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h2>Settings</h2>
+      <div class="settings-section">
+        <label class="checkbox-label">
+          <input type="checkbox" id="settingsFilterByProgram">
+          Enable program notification filtering
+        </label>
+        <div id="settingsWhitelistSection" style="display:none">
+          <label>Whitelisted Program IDs (one per line)</label>
+          <textarea id="settingsWhitelistedPrograms" class="input" rows="6" placeholder="e.g.&#10;8603&#10;12345"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="settingsSave" class="btn">Save</button>
+        <button type="button" id="settingsCancel" class="btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const C = window.electronAPI?.constants;
+      if (C) {
+        document.querySelector('.header h1').textContent = C.APP.NAME;
+        document.querySelector('.org-switcher label').textContent = C.UI_LABELS.ORGANIZATION;
+        document.querySelector('#orgSelect option').textContent = C.UI_EMPTY.ADD_ORG_FIRST;
+        document.querySelector('#addOrgBtn').textContent = C.UI_LABELS.ADD_ORG;
+        document.querySelector('#manageOrgsBtn').textContent = C.UI_LABELS.MANAGE_ORGS;
+        document.querySelector('#refreshPrograms').textContent = C.UI_LABELS.REFRESH_PROGRAMS;
+        document.querySelectorAll('.nav-section h2')[0].textContent = C.UI_LABELS.PROGRAMS;
+        document.querySelectorAll('.nav-section h2')[1].textContent = C.UI_LABELS.PIPELINES;
+        document.querySelectorAll('.nav-section h2')[2].textContent = C.UI_LABELS.ENVIRONMENTS;
+        document.querySelector('#orgModalTitle').textContent = C.UI_LABELS.ADD_ORGANIZATION;
+        document.querySelector('#manageOrgsModal h2').textContent = C.UI_LABELS.MANAGE_ORGANIZATIONS;
+        document.querySelector('#manageOrgsClose').textContent = C.UI_LABELS.CLOSE;
+        const welcomePs = document.querySelectorAll('#welcome p');
+        if (welcomePs[0]) welcomePs[0].textContent = C.UI_WELCOME.ADD_ORG_START;
+        if (welcomePs[1]) welcomePs[1].textContent = C.UI_WELCOME.CONFIGURE_CREDENTIALS;
+        const formLabels = document.querySelectorAll('#orgForm label');
+        if (formLabels[0]) formLabels[0].textContent = C.UI_LABELS.DISPLAY_NAME;
+        if (formLabels[1]) formLabels[1].textContent = C.UI_LABELS.ORG_ID;
+        if (formLabels[2]) formLabels[2].textContent = C.UI_LABELS.CLIENT_ID;
+        if (formLabels[3]) formLabels[3].textContent = C.UI_LABELS.CLIENT_SECRET;
+        if (formLabels[4]) formLabels[4].textContent = C.UI_LABELS.SCOPE;
+        if (formLabels[5]) formLabels[5].textContent = C.UI_LABELS.JOURNAL_ENDPOINT;
+        const formInputs = document.querySelectorAll('#orgForm .input');
+        if (formInputs[0]) formInputs[0].placeholder = C.UI_PLACEHOLDERS.ORG_NAME;
+        if (formInputs[1]) formInputs[1].placeholder = C.UI_PLACEHOLDERS.ORG_ID;
+        if (formInputs[2]) formInputs[2].placeholder = C.UI_PLACEHOLDERS.CLIENT_ID;
+        if (formInputs[3]) formInputs[3].placeholder = C.UI_PLACEHOLDERS.CLIENT_SECRET;
+        if (formInputs[4]) formInputs[4].placeholder = C.UI_PLACEHOLDERS.SCOPE;
+        if (formInputs[5]) formInputs[5].placeholder = C.UI_PLACEHOLDERS.JOURNAL_ENDPOINT;
+        const formBtns = document.querySelectorAll('#orgForm .btn');
+        if (formBtns[0]) formBtns[0].textContent = C.UI_LABELS.SAVE;
+        if (formBtns[1]) formBtns[1].textContent = C.UI_LABELS.CANCEL;
+      }
+    })();
+  </script>
+  <script src="renderer.js"></script>
+</body>
+</html>
