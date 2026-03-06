@@ -281,7 +281,7 @@ body {
   border-color: var(--spectrum-accent-background-color-default);
   color: var(--spectrum-static-white-text-color);
 }
-.logs-download-heading {
+.logs-heading {
   margin: 16px 0 8px;
   font-size: 0.875rem;
   color: var(--spectrum-neutral-subdued-content-color-default);

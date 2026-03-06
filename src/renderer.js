@@ -386,9 +386,9 @@ async function showEnvironmentDetail(env) {
       <h3>Variables</h3>
       <div class="env-vars">${varsHtml}</div>
       <h3>Logs</h3>
-      <h4>${C.UI_LABELS.TAIL_HINT}</h4>
+      <h4 class="logs-heading">${C.UI_LABELS.TAIL_HINT}</h4>
       ${tailSectionHtml}
-      <h4 class="logs-download-heading">${C.UI_LABELS.DOWNLOAD_LOGS_HEADING}</h4>
+      <h4 class="logs-heading">${C.UI_LABELS.DOWNLOAD_LOGS_HEADING}</h4>
       <div class="env-logs">${logsHtml}</div>
     `;
     const attachLogHandlers = () => {
