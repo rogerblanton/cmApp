@@ -44,7 +44,7 @@
     const pre = document.getElementById('logTailPre');
     const status = document.getElementById('logTailStatus');
 
-    const append = (text) => {
+    const appendLog = (text) => {
       pre.textContent += text;
       pre.scrollTop = pre.scrollHeight;
     };
@@ -55,7 +55,7 @@
     };
 
     if (api) {
-      api.onLogTailChunk(append);
+      api.onLogTailChunk(appendLog);
       api.onLogTailDone(() => setStatus(C.UI_EMPTY?.FINISHED || 'Finished', ''));
       api.onLogTailError((err) => setStatus('Error: ' + (err?.message || err), 'error'));
       api.onLogTailParams(async (params) => {
@@ -68,7 +68,7 @@
           await api.startLogTail(tailUrl);
         } catch (e) {
           setStatus('Error: ' + e.message, 'error');
-          append('\n' + e.message);
+          appendLog('\n' + e.message);
         }
       });
     } else {
