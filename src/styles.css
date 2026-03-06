@@ -19,6 +19,41 @@
   cursor: pointer;
 }
 .btn:hover { background: var(--spectrum-accent-background-color-hover); }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn:disabled:hover { background: var(--spectrum-accent-background-color-default); }
+
+.phases-steps { margin-top: 12px; }
+.phase-block {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--spectrum-neutral-subtle-background-color-default);
+  border-radius: 6px;
+  border-left: 3px solid var(--spectrum-neutral-subdued-background-color-default);
+}
+.phase-block .phase-name { display: block; margin-bottom: 8px; }
+.step-row {
+  margin: 8px 0 8px 16px;
+  padding: 6px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+.step-row .step-label { font-weight: 500; }
+.step-row .step-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.step-row.status-failed .step-status { background: var(--spectrum-negative-background-color-default); color: var(--spectrum-static-white-text-color); }
+.step-row.status-running .step-status { background: var(--spectrum-notice-background-color-default); color: var(--spectrum-notice-content-color-default); }
+.step-row.status-done .step-status { background: var(--spectrum-positive-background-color-default); color: var(--spectrum-static-white-text-color); }
+.step-meta { font-size: 0.75rem; color: var(--spectrum-neutral-subdued-content-color-default); }
+.step-logs-link { font-size: 0.75rem; margin-left: 4px; }
 .btn-outline-danger {
   padding: 6px 12px;
   font-size: 0.75rem;

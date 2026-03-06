@@ -551,7 +551,7 @@ async function showPipelineDetail(pipeline) {
       <p><strong>Type:</strong> ${pipeline.type || '—'}</p>
     </div>
     <div class="actions">
-      <button id="startPipelineBtn" class="btn">${C.UI_LABELS.START_PIPELINE}</button>
+      <button id="startPipelineBtn" class="btn" ${currentExecution ? 'disabled title="An execution is currently running"' : ''}>${C.UI_LABELS.START_PIPELINE}</button>
     </div>
     <h3>${C.UI_LABELS.EXECUTIONS}</h3>
     <div class="execution-list">${execHtml || `<p>${C.UI_EMPTY.NO_EXECUTIONS}</p>`}</div>
@@ -620,20 +620,81 @@ function showExecutionDetail(exec) {
     { label: state.selectedPipeline?.name || state.selectedPipeline?.id, onClick: () => showPipelineDetail(state.selectedPipeline) },
     { label: exec.id }
   ]);
-  const phases = exec.phases || exec._embedded?.phases || [];
-  let phasesHtml = phases.map(p => {
-    const steps = p.steps || p._embedded?.steps || [];
-    return `
-    <div><strong>${p.name || p.id}</strong>
+  const pipelinePhases = state.selectedPipeline?.phases || [];
+  const pipelinePhaseMap = new Map(
+    pipelinePhases.filter(p => p.id != null).map(p => [String(p.id), p])
+  );
+  const stepStates = exec._embedded?.stepStates || exec.stepStates || [];
+  const byPhase = new Map();
+  for (const s of stepStates) {
+    const pid = String(s.phaseId || s.phase);
+    if (!byPhase.has(pid)) byPhase.set(pid, []);
+    byPhase.get(pid).push(s);
+  }
+  let phasesHtml = '';
+  for (const [phaseId, steps] of byPhase.entries()) {
+    const phaseDef = pipelinePhaseMap.get(phaseId) || pipelinePhases.find(p => String(p.id) === phaseId);
+    const phaseName = phaseDef?.name || phaseDef?.type || `Phase ${phaseId}`;
+    phasesHtml += `<div class="phase-block"><strong class="phase-name">${escapeHtml(phaseName)}</strong>`;
+    for (const s of steps) {
+      const stepName = s.action || s.name || s.stepId || '—';
+      const status = s.status || '—';
+      const statusClass = /FAILED|ERROR|CANCELLED/i.test(status) ? 'status-failed' : /RUNNING|WAITING|PENDING/i.test(status) ? 'status-running' : 'status-done';
+      const links = s._links ?? s.links ?? {};
+      const advance = links.advance ?? links['http://ns.adobe.com/adobecloud/rel/advance'];
+      const cancel = links.cancel ?? links['http://ns.adobe.com/adobecloud/rel/cancel'];
+      const logs = links.logs ?? links['http://ns.adobe.com/adobecloud/rel/logs'];
+      const selfLink = links.self ?? links['self'];
+      const advanceHref = Array.isArray(advance) ? advance[0]?.href : advance?.href;
+      const cancelHref = Array.isArray(cancel) ? cancel[0]?.href : cancel?.href;
+      const logsHref = Array.isArray(logs) ? logs[0]?.href : logs?.href;
+      const startedAt = s.startedAt || s.createdAt;
+      const finishedAt = s.finishedAt || s.endedAt;
+      let durationStr = '';
+      if (startedAt && finishedAt) {
+        try {
+          const start = new Date(startedAt).getTime();
+          const end = new Date(finishedAt).getTime();
+          const sec = Math.round((end - start) / 1000);
+          durationStr = sec < 60 ? `${sec} sec` : sec < 3600 ? `${Math.floor(sec / 60)} min ${sec % 60} sec` : `${Math.floor(sec / 3600)} hr ${Math.floor((sec % 3600) / 60)} min`;
+        } catch (_) {}
+      }
+      const meta = [];
+      if (startedAt) meta.push(new Date(startedAt).toLocaleString());
+      if (durationStr) meta.push(durationStr);
+      if (s.repositoryId || s.branch || s.commit) {
+        if (s.repositoryId) meta.push(`Repo: ${s.repositoryId}`);
+        if (s.branch) meta.push(`Branch: ${s.branch}`);
+        if (s.commit) meta.push(`Commit: ${String(s.commit).slice(0, 12)}`);
+      }
+      const metaStr = meta.length ? ` <span class="step-meta">(${meta.join(' · ')})</span>` : '';
+      phasesHtml += `
+        <div class="step-row ${statusClass}">
+          <span class="step-label">${escapeHtml(stepName)}</span>
+          <span class="step-status">${escapeHtml(status)}</span>${metaStr}
+          ${logsHref ? ` <a href="#" class="step-logs-link cm-external-link" data-url="${escapeHtml(logsHref.startsWith('http') ? logsHref : 'https://cloudmanager.adobe.io' + logsHref)}">View log</a>` : ''}
+          ${advanceHref ? `<button class="btn advance-btn" data-phase="${escapeHtml(phaseId)}" data-step="${escapeHtml(s.stepId || s.id)}">Advance</button>` : ''}
+          ${cancelHref ? `<button class="btn btn-danger cancel-btn" data-phase="${escapeHtml(phaseId)}" data-step="${escapeHtml(s.stepId || s.id)}">Cancel</button>` : ''}
+        </div>`;
+    }
+    phasesHtml += '</div>';
+  }
+  if (!phasesHtml && (exec.phases || exec._embedded?.phases || []).length > 0) {
+    const phases = exec.phases || exec._embedded?.phases || [];
+    phasesHtml = phases.map(p => {
+      const steps = p.steps || p._embedded?.steps || [];
+      return `
+    <div><strong>${escapeHtml(p.name || p.id)}</strong>
       ${steps.map(s => `
-        <div style="margin-left:16px">${s.name || s.id}: ${s.status || '—'}
+        <div style="margin-left:16px">${escapeHtml(s.name || s.id)}: ${escapeHtml(s.status || '—')}
           ${s._links?.advance ? `<button class="btn advance-btn" data-phase="${p.id}" data-step="${s.id}">Advance</button>` : ''}
           ${s._links?.cancel ? `<button class="btn btn-danger cancel-btn" data-phase="${p.id}" data-step="${s.id}">Cancel</button>` : ''}
         </div>
       `).join('')}
     </div>
   `;
-  }).join('');
+    }).join('');
+  }
   detailContent.innerHTML = `
     <div class="meta">
       <h3>${C.UI_LABELS.EXECUTION_PREFIX}${exec.id}</h3>
@@ -641,7 +702,7 @@ function showExecutionDetail(exec) {
       <div><a href="#" target="_blank" data-url="${'https://experience.adobe.com/#/cloud-manager/pipelineexecution.html/program/'+(exec.programId) + '/pipeline/'+(exec.pipelineId)+'/execution/'+ (exec.id)}" class="cm-external-link">Link to Cloud Manager Browser</a></div>
     </div>
     <h3>Phases & Steps</h3>
-    <div>${phasesHtml || `<p>${C.UI_EMPTY.NO_PHASES}</p>`}</div>
+    <div class="phases-steps">${phasesHtml || `<p>${C.UI_EMPTY.NO_PHASES}</p>`}</div>
     <pre>${JSON.stringify(exec, null, 2)}</pre>
   `;
   detailContent.querySelectorAll('.advance-btn').forEach(btn => {
