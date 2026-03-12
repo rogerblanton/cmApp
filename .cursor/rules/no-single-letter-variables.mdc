@@ -1,0 +1,31 @@
+---
+description: Avoid single-letter variable names for better readability and traceability
+alwaysApply: true
+---
+
+# No Single-Letter Variables
+
+Do not use single letters for variable names. Use descriptive names so variables are easy to follow across methods and files.
+
+## Examples
+
+**❌ Avoid:**
+```javascript
+const e = await api.getExecution(orgId, programId, pipelineId, executionId);
+executions.forEach(e => { ... });
+const p = pipelinePhases.find(...);
+const s = stepStates[i];
+```
+
+**✅ Prefer:**
+```javascript
+const execution = await api.getExecution(orgId, programId, pipelineId, executionId);
+executions.forEach(execution => { ... });
+const phase = pipelinePhases.find(...);
+const stepState = stepStates[i];
+```
+
+## Exceptions
+
+- Loop indices: `i`, `j`, `k` for simple numeric loops (e.g. `for (let i = 0; i < length; i++)`) are acceptable when the loop body is short and the index is not passed around
+- Mathematical notation: single letters in formulas (e.g. `x`, `y` in coordinate math) may be acceptable in isolated calculations

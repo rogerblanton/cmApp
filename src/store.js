@@ -11,7 +11,7 @@ function getOrgs() {
 
 function saveOrg(org) {
   const orgs = getOrgs();
-  const idx = orgs.findIndex(o => o.id === org.id);
+  const idx = orgs.findIndex(existing => existing.id === org.id);
   const saved = { ...org, updatedAt: new Date().toISOString() };
   if (idx >= 0) {
     orgs[idx] = saved;
@@ -25,7 +25,7 @@ function saveOrg(org) {
 }
 
 function deleteOrg(id) {
-  const orgs = getOrgs().filter(o => o.id !== id);
+  const orgs = getOrgs().filter(org => org.id !== id);
   store.set(STORE_KEYS.ORGS, orgs);
   if (store.get(STORE_KEYS.ACTIVE_ORG_ID) === id) {
     store.delete(STORE_KEYS.ACTIVE_ORG_ID);

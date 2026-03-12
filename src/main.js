@@ -14,7 +14,7 @@ const JOURNAL_POLL_MS = 60 * 1000; // 60 seconds
 
 async function getOrgAndToken(orgId) {
   const orgs = store.getOrgs();
-  const org = orgs.find(o => o.id === orgId);
+  const org = orgs.find(candidate => candidate.id === orgId);
   if (!org) throw new Error(UI_ERRORS.ORGANIZATION_NOT_FOUND);
   const cached = tokenCache.get(orgId);
   if (cached && cached.expiresAt > Date.now() + 60000) {
@@ -71,7 +71,7 @@ async function pollJournal() {
   const activeId = store.getActiveOrgId();
   if (!activeId) { console.log('[Journal] No active org, skipping poll'); return; }
   const orgs = store.getOrgs();
-  const org = orgs.find(o => o.id === activeId);
+  const org = orgs.find(candidate => candidate.id === activeId);
   if (!org?.journalEndpoint?.trim()) { console.log('[Journal] No journal endpoint for active org, skipping'); return; }
   try {
     const { org: activeOrg, token } = await getOrgAndToken(activeId);

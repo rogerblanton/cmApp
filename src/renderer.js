@@ -13,6 +13,16 @@ let state = {
   executions: []
 };
 
+const CURRENT_EXECUTION_POLL_MS = 30 * 1000; // 30 seconds
+let currentExecutionPollTimer = null;
+
+function stopCurrentExecutionPoll() {
+  if (currentExecutionPollTimer) {
+    clearInterval(currentExecutionPollTimer);
+    currentExecutionPollTimer = null;
+  }
+}
+
 // --- DOM ---
 const orgSelect = document.getElementById('orgSelect');
 const addOrgBtn = document.getElementById('addOrgBtn');
@@ -62,11 +72,11 @@ async function loadOrgs() {
   if (orgs.length === 0) {
     orgSelect.innerHTML = `<option value="">${C.UI_EMPTY.ADD_ORG_FIRST}</option>`;
   } else {
-    orgs.forEach(o => {
+    orgs.forEach(org => {
       const opt = document.createElement('option');
-      opt.value = o.id;
-      opt.textContent = o.name || o.organizationId || o.id;
-      if (o.id === activeId) opt.selected = true;
+      opt.value = org.id;
+      opt.textContent = org.name || org.organizationId || org.id;
+      if (org.id === activeId) opt.selected = true;
       orgSelect.appendChild(opt);
     });
   }
@@ -107,8 +117,8 @@ async function refreshProgramsList() {
     hideWelcome();
     breadcrumb.innerHTML = '';
     detailContent.innerHTML = `<p class="welcome">${C.UI_EMPTY.SELECT_PROGRAM}</p>`;
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error?.message ?? 'Unknown error');
     programList.innerHTML = `<p class="empty">${C.UI_EMPTY.ERROR_LOADING_PROGRAMS}</p>`;
   }
 }
@@ -119,12 +129,12 @@ function renderProgramList() {
     programList.innerHTML = `<p class="empty">${C.UI_EMPTY.NO_PROGRAMS}</p>`;
     return;
   }
-  state.programs.forEach(p => {
+  state.programs.forEach(program => {
     const div = document.createElement('div');
-    div.className = 'list-item' + (state.selectedProgram?.id === p.id ? ' selected' : '');
-    div.textContent = p.name || p.id;
-    div.dataset.id = p.id;
-    div.onclick = () => selectProgram(p);
+    div.className = 'list-item' + (state.selectedProgram?.id === program.id ? ' selected' : '');
+    div.textContent = program.name || program.id;
+    div.dataset.id = program.id;
+    div.onclick = () => selectProgram(program);
     programList.appendChild(div);
   });
 }
@@ -151,8 +161,8 @@ async function selectProgram(program) {
     renderPipelineList();
     renderEnvironmentList();
     showProgramDetail(program);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error?.message ?? 'Unknown error');
     pipelineList.innerHTML = `<p class="empty">${C.UI_EMPTY.ERROR_LOADING_PROGRAMS}</p>`;
     environmentList.innerHTML = `<p class="empty">${C.UI_EMPTY.ERROR_LOADING}</p>`;
   }
@@ -160,12 +170,12 @@ async function selectProgram(program) {
 
 function renderPipelineList() {
   pipelineList.innerHTML = '';
-  state.pipelines.forEach(p => {
+  state.pipelines.forEach(pipeline => {
     const div = document.createElement('div');
-    div.className = 'list-item' + (state.selectedPipeline?.id === p.id ? ' selected' : '');
-    div.textContent = p.name || p.id;
-    div.dataset.id = p.id;
-    div.onclick = () => selectPipeline(p);
+    div.className = 'list-item' + (state.selectedPipeline?.id === pipeline.id ? ' selected' : '');
+    div.textContent = pipeline.name || pipeline.id;
+    div.dataset.id = pipeline.id;
+    div.onclick = () => selectPipeline(pipeline);
     pipelineList.appendChild(div);
   });
 }
@@ -176,12 +186,12 @@ function renderEnvironmentList() {
     environmentList.innerHTML = `<p class="empty">${C.UI_EMPTY.NO_ENVIRONMENTS}</p>`;
     return;
   }
-  state.environments.forEach(e => {
+  state.environments.forEach(environment => {
     const div = document.createElement('div');
-    div.className = 'list-item' + (state.selectedEnvironment?.id === e.id ? ' selected' : '');
-    div.textContent = e.name || e.id;
-    div.dataset.id = e.id;
-    div.onclick = () => selectEnvironment(e);
+    div.className = 'list-item' + (state.selectedEnvironment?.id === environment.id ? ' selected' : '');
+    div.textContent = environment.name || environment.id;
+    div.dataset.id = environment.id;
+    div.onclick = () => selectEnvironment(environment);
     environmentList.appendChild(div);
   });
 }
@@ -196,8 +206,8 @@ async function selectPipeline(pipeline) {
   clearError();
   try {
     await showPipelineDetail(pipeline);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error?.message ?? 'Unknown error');
   }
 }
 
@@ -211,8 +221,8 @@ async function selectEnvironment(env) {
   clearError();
   try {
     await showEnvironmentDetail(env);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error?.message ?? 'Unknown error');
   }
 }
 
@@ -232,6 +242,7 @@ function renderBreadcrumb(items) {
 }
 
 function showProgramDetail(program) {
+  stopCurrentExecutionPoll();
   renderBreadcrumb([{ label: program.name || program.id }]);
   detailContent.innerHTML = `
     <div class="meta">
@@ -244,6 +255,7 @@ function showProgramDetail(program) {
 }
 
 async function showEnvironmentDetail(env) {
+  stopCurrentExecutionPoll();
   renderBreadcrumb([
     { label: state.selectedProgram?.name || state.selectedProgram?.id, onClick: () => showProgramDetail(state.selectedProgram) },
     { label: env.name || env.id }
@@ -314,7 +326,7 @@ async function showEnvironmentDetail(env) {
       ? `<div class="log-tail-section">          
           <div class="log-tail-btns">
             ${uniqueTailLogs.map(({ service, name }) => {
-              const label = `${String(service).charAt(0).toUpperCase() + String(service).slice(1).toLowerCase()} / ${name}`;
+              const label = `${formatServiceDisplay(service)} / ${name}`;
               return `<button class="log-tail-btn" data-service="${escapeHtml(service)}" data-name="${escapeHtml(name)}" title="Tail ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
             }).join('')}
           </div>
@@ -322,24 +334,7 @@ async function showEnvironmentDetail(env) {
       : '';
     let logsHtml = '';
     if (normalizedLogs.length) {
-      const renderLogRows = (logs) => logs.map((l, i) => {
-        const dateStr = l.date && l.date !== '—' ? new Date(l.date).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' }) : (l.date || '—');
-        const canDownload = l.service && l.name && l.service !== '—' && l.name !== '—';
-        const dateParam = (l.date && l.date !== '—') ? (typeof l.date === 'string' && l.date.includes('T') ? l.date.slice(0, 10) : l.date) : '';
-        const serviceDisplay = String(l.service).charAt(0).toUpperCase() + String(l.service).slice(1).toLowerCase();
-        return `
-          <tr data-i="${i}">
-            <td>${escapeHtml(String(l.name))}</td>
-            <td>${escapeHtml(serviceDisplay)}</td>
-            <td>${escapeHtml(String(dateStr))}</td>
-            <td>
-              ${canDownload ? `<button class="log-download-btn" data-service="${escapeHtml(String(l.service))}" data-name="${escapeHtml(String(l.name))}" data-date="${escapeHtml(dateParam)}" title="Download">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </button>` : '—'}
-            </td>
-          </tr>
-        `;
-      }).join('');
+      const renderLogRows = (logs) => logs.map((logEntry, idx) => renderLogRow(logEntry, idx)).join('');
       const sortIndicators = (col, dir) => ({
         name: col === 'name' ? (dir > 0 ? ' ▲' : ' ▼') : '',
         service: col === 'service' ? (dir > 0 ? ' ▲' : ' ▼') : '',
@@ -403,8 +398,8 @@ async function showEnvironmentDetail(env) {
             const url = await api.getEnvironmentLogDownloadUrl(state.activeOrgId, state.selectedProgram.id, env.id, service, name, date || undefined);
             if (url) window.open(url, '_blank');
             else showError(C.UI_ERRORS.COULD_NOT_GET_DOWNLOAD_URL);
-          } catch (e) {
-            showError(e.message);
+          } catch (error) {
+            showError(error.message);
           }
         };
       });
@@ -415,22 +410,16 @@ async function showEnvironmentDetail(env) {
           if (!service || !name) return;
           clearError();
           try {
-            const logLabel = `${String(service).charAt(0).toUpperCase() + String(service).slice(1).toLowerCase()} / ${name}`;
+            const logLabel = `${formatServiceDisplay(service)} / ${name}`;
             api.openLogTailWindow(state.activeOrgId, state.selectedProgram.id, env.id, service, name, logLabel);
-          } catch (e) {
-            showError(e.message);
+          } catch (error) {
+            showError(error.message);
           }
         };
       });
     };
     attachLogHandlers();
-    detailContent.querySelectorAll('.cm-external-link').forEach(link => {
-      link.onclick = (e) => {
-        e.preventDefault();
-        const url = link.dataset.url;
-        if (url) api.openExternal(url);
-      };
-    });
+    attachCmExternalLinkHandlers(detailContent);
     const logsTable = detailContent.querySelector('.logs-table');
     if (logsTable && normalizedLogs.length) {
       let sortCol = 'date';
@@ -453,24 +442,7 @@ async function showEnvironmentDetail(env) {
           const label = col === 'name' ? C.UI_LABELS.LOG_FILE : col === 'service' ? C.UI_LABELS.SERVICE : C.UI_LABELS.DATE_UTC;
           th.textContent = label + (col === sortCol ? (sortDir > 0 ? ' ▲' : ' ▼') : '');
         });
-        tbody.innerHTML = sorted.map((l, i) => {
-          const dateStr = l.date && l.date !== '—' ? new Date(l.date).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' }) : (l.date || '—');
-          const canDownload = l.service && l.name && l.service !== '—' && l.name !== '—';
-          const dateParam = (l.date && l.date !== '—') ? (typeof l.date === 'string' && l.date.includes('T') ? l.date.slice(0, 10) : l.date) : '';
-          const serviceDisplay = String(l.service).charAt(0).toUpperCase() + String(l.service).slice(1).toLowerCase();
-          return `
-            <tr data-i="${i}">
-              <td>${escapeHtml(String(l.name))}</td>
-              <td>${escapeHtml(serviceDisplay)}</td>
-              <td>${escapeHtml(String(dateStr))}</td>
-              <td>
-                ${canDownload ? `<button class="log-download-btn" data-service="${escapeHtml(String(l.service))}" data-name="${escapeHtml(String(l.name))}" data-date="${escapeHtml(dateParam)}" title="Download">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </button>` : '—'}
-              </td>
-            </tr>
-          `;
-        }).join('');
+        tbody.innerHTML = sorted.map((logEntry, idx) => renderLogRow(logEntry, idx)).join('');
         attachLogHandlers();
       };
       logsTable.querySelectorAll('.sortable').forEach(th => {
@@ -482,8 +454,8 @@ async function showEnvironmentDetail(env) {
         };
       });
     }
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error.message);
     detailContent.innerHTML = `
       <div class="meta">
         <h3>${env.name || env.id}</h3>
@@ -493,13 +465,52 @@ async function showEnvironmentDetail(env) {
   }
 }
 
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatServiceDisplay(service) {
+  return String(service).charAt(0).toUpperCase() + String(service).slice(1).toLowerCase();
+}
+
+function renderLogRow(logEntry, index) {
+  const dateStr = logEntry.date && logEntry.date !== '—'
+    ? new Date(logEntry.date).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })
+    : (logEntry.date || '—');
+  const canDownload = logEntry.service && logEntry.name && logEntry.service !== '—' && logEntry.name !== '—';
+  const dateParam = (logEntry.date && logEntry.date !== '—')
+    ? (typeof logEntry.date === 'string' && logEntry.date.includes('T') ? logEntry.date.slice(0, 10) : logEntry.date)
+    : '';
+  const serviceDisplay = formatServiceDisplay(logEntry.service);
+  return `
+    <tr data-i="${index}">
+      <td>${escapeHtml(String(logEntry.name))}</td>
+      <td>${escapeHtml(serviceDisplay)}</td>
+      <td>${escapeHtml(String(dateStr))}</td>
+      <td>
+        ${canDownload ? `<button class="log-download-btn" data-service="${escapeHtml(String(logEntry.service))}" data-name="${escapeHtml(String(logEntry.name))}" data-date="${escapeHtml(dateParam)}" title="Download">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>` : '—'}
+      </td>
+    </tr>
+  `;
+}
+
+function attachCmExternalLinkHandlers(container) {
+  if (!container) return;
+  container.querySelectorAll('.cm-external-link').forEach(link => {
+    link.onclick = (ev) => {
+      ev.preventDefault();
+      const url = link.dataset.url;
+      if (url) api.openExternal(url);
+    };
+  });
 }
 
 async function showPipelineDetail(pipeline) {
+  stopCurrentExecutionPoll();
   renderBreadcrumb([
     { label: state.selectedProgram?.name || state.selectedProgram?.id, onClick: () => showProgramDetail(state.selectedProgram) },
     { label: pipeline.name || pipeline.id }
@@ -561,6 +572,25 @@ async function showPipelineDetail(pipeline) {
     btn.onclick = () => selectExecution(btn.dataset.id);
   });
   detailContent.querySelector('#startPipelineBtn').onclick = () => startPipeline();
+
+  if (currentExecution) {
+    stopCurrentExecutionPoll();
+    currentExecutionPollTimer = setInterval(async () => {
+      try {
+        const current = await api.getCurrentExecution(state.activeOrgId, state.selectedProgram.id, pipeline.id).catch(() => null);
+        if (!current && state.selectedPipeline?.id === pipeline.id) {
+          stopCurrentExecutionPoll();
+          const btn = detailContent.querySelector('#startPipelineBtn');
+          if (btn) {
+            btn.disabled = false;
+            btn.removeAttribute('title');
+          }
+        }
+      } catch (_) {}
+    }, CURRENT_EXECUTION_POLL_MS);
+  } else {
+    stopCurrentExecutionPoll();
+  }
 }
 
 async function selectExecution(executionId) {
@@ -568,8 +598,8 @@ async function selectExecution(executionId) {
   try {
     const exec = await api.getExecution(state.activeOrgId, state.selectedProgram.id, state.selectedPipeline.id, executionId);
     showExecutionDetail(exec);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error.message);
   }
 }
 
@@ -609,12 +639,13 @@ async function navigateToExecution(programId, pipelineId, executionId, targetOrg
     renderPipelineList();
     renderEnvironmentList();
     showExecutionDetail(exec);
-  } catch (e) {
-    showError(e.message || 'Failed to navigate to execution');
+  } catch (error) {
+    showError(error?.message ?? 'Failed to navigate to execution');
   }
 }
 
 function showExecutionDetail(exec) {
+  stopCurrentExecutionPoll();
   renderBreadcrumb([
     { label: state.selectedProgram?.name || state.selectedProgram?.id, onClick: () => showProgramDetail(state.selectedProgram) },
     { label: state.selectedPipeline?.name || state.selectedPipeline?.id, onClick: () => showPipelineDetail(state.selectedPipeline) },
@@ -711,13 +742,7 @@ function showExecutionDetail(exec) {
   detailContent.querySelectorAll('.cancel-btn').forEach(btn => {
     btn.onclick = () => cancelStep(btn.dataset.phase, btn.dataset.step);
   });
-  detailContent.querySelectorAll('.cm-external-link').forEach(link => {
-    link.onclick = (e) => {
-      e.preventDefault();
-      const url = link.dataset.url;
-      if (url) api.openExternal(url);
-    };
-  });
+  attachCmExternalLinkHandlers(detailContent);
 }
 
 async function startPipeline() {
@@ -726,8 +751,8 @@ async function startPipeline() {
   try {
     await api.startPipeline(state.activeOrgId, state.selectedProgram.id, state.selectedPipeline.id, { mode: 'NORMAL' });
     await selectPipeline(state.selectedPipeline);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error?.message ?? 'Unknown error');
   }
 }
 
@@ -737,8 +762,8 @@ async function advanceStep(phaseId, stepId) {
   try {
     await api.advanceStep(state.activeOrgId, state.selectedProgram.id, state.selectedPipeline.id, state.selectedExecution, phaseId, stepId, {});
     await selectExecution(state.selectedExecution);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error.message);
   }
 }
 
@@ -748,8 +773,8 @@ async function cancelStep(phaseId, stepId) {
   try {
     await api.cancelStep(state.activeOrgId, state.selectedProgram.id, state.selectedPipeline.id, state.selectedExecution, phaseId, stepId, {});
     await selectExecution(state.selectedExecution);
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error.message);
   }
 }
 
@@ -790,8 +815,8 @@ orgForm.addEventListener('submit', async (e) => {
     await api.saveOrg(org);
     closeOrgModal();
     await loadOrgs();
-  } catch (e) {
-    showError(e.message);
+  } catch (error) {
+    showError(error.message);
   }
 });
 
@@ -803,26 +828,26 @@ async function openManageOrgsModal() {
   const orgs = await api.getOrgs();
   const list = document.getElementById('manageOrgsList');
   list.innerHTML = '';
-  orgs.forEach(o => {
+  orgs.forEach(org => {
     const div = document.createElement('div');
     div.className = 'manage-org-item card';
     div.innerHTML = `
       <div>
-        <div class="name">${o.name || C.UI_EMPTY.UNNAMED}</div>
-        <div class="org-id">${o.organizationId || ''}</div>        
+        <div class="name">${org.name || C.UI_EMPTY.UNNAMED}</div>
+        <div class="org-id">${org.organizationId || ''}</div>        
       </div>
       <div>
-        <button class="btn btn-outline-danger edit-org" data-id="${o.id}">${C.UI_LABELS.EDIT}</button>
-        <button class="btn btn-outline-danger delete-org" data-id="${o.id}">${C.UI_LABELS.DELETE}</button>
+        <button class="btn btn-outline-danger edit-org" data-id="${org.id}">${C.UI_LABELS.EDIT}</button>
+        <button class="btn btn-outline-danger delete-org" data-id="${org.id}">${C.UI_LABELS.DELETE}</button>
       </div>
     `;
     div.querySelector('.edit-org').onclick = () => {
       manageOrgsModal.style.display = 'none';
-      openOrgModal(o);
+      openOrgModal(org);
     };
     div.querySelector('.delete-org').onclick = async () => {
-      if (confirm(C.CONFIRM.DELETE_ORG(o.name || o.id))) {
-        await api.deleteOrg(o.id);
+      if (confirm(C.CONFIRM.DELETE_ORG(org.name || org.id))) {
+        await api.deleteOrg(org.id);
         openManageOrgsModal();
       }
     };
