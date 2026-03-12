@@ -108,6 +108,16 @@ body {
   background: var(--spectrum-background-layer-2-color);
   border-bottom: 1px solid var(--spectrum-neutral-subdued-background-color-default);
 }
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
 .header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--spectrum-accent-content-color-default); }
 .org-switcher {
   display: flex;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://*.adobe.io https://*.adobelogin.com">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; connect-src https://*.adobe.io https://*.adobelogin.com">
   <title>Adobe Cloud Manager</title>
   <link rel="stylesheet" href="../node_modules/@spectrum-css/tokens/dist/css/index.css">
   <link rel="stylesheet" href="styles.css">
@@ -11,7 +11,10 @@
 <body>
   <div class="app">
     <header class="header">
-      <h1>Adobe Cloud Manager</h1>
+      <div class="header-brand">
+        <img src="../icon.png" alt="" class="header-logo">
+        <h1>Adobe Cloud Manager</h1>
+      </div>
       <div class="org-switcher">
         <label>Organization:</label>
         <select id="orgSelect" disabled>
