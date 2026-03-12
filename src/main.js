@@ -188,6 +188,43 @@ ipcMain.handle('api:pipeline', async (_, orgId, programId, pipelineId) => {
   return api.getPipeline(org, token, programId, pipelineId);
 });
 
+ipcMain.handle('api:repositories', async (_, orgId, programId) => {
+  const { org, token } = await getOrgAndToken(orgId);
+  return api.getRepositories(org, token, programId);
+});
+
+ipcMain.handle('api:repository', async (_, orgId, programId, repositoryId) => {
+  const { org, token } = await getOrgAndToken(orgId);
+  return api.getRepository(org, token, programId, repositoryId);
+});
+
+ipcMain.handle('api:branches', async (_, orgId, programId, repositoryId) => {
+  console.log('[API] api:branches called', { orgId, programId, repositoryId });
+  const { org, token } = await getOrgAndToken(orgId);
+  const result = await api.getBranches(org, token, programId, repositoryId);
+  console.log('[API] api:branches done', { count: Array.isArray(result) ? result.length : 'n/a' });
+  return result;
+});
+
+ipcMain.handle('api:branchesByPath', async (_, orgId, path) => {
+  console.log('[API] api:branchesByPath called', { orgId, path });
+  const { org, token } = await getOrgAndToken(orgId);
+  const result = await api.getBranchesByPath(org, token, path);
+  console.log('[API] api:branchesByPath done', { count: Array.isArray(result) ? result.length : 'n/a' });
+  return result;
+});
+
+ipcMain.handle('api:githubBranches', async (_, owner, repo, apiBaseUrl, pat) => {
+  const token = (pat || '').trim();
+  if (!token) throw new Error('GitHub PAT not configured. Add it in the org settings (Manage Orgs → Edit).');
+  return api.getGitHubBranches(token, owner, repo, apiBaseUrl);
+});
+
+ipcMain.handle('api:patch-pipeline', async (_, orgId, programId, pipelineId, patch) => {
+  const { org, token } = await getOrgAndToken(orgId);
+  return api.patchPipeline(org, token, programId, pipelineId, patch);
+});
+
 ipcMain.handle('api:executions', async (_, orgId, programId, pipelineId, options = {}) => {
   const { org, token } = await getOrgAndToken(orgId);
   return api.getExecutions(org, token, programId, pipelineId, options);
@@ -310,7 +347,6 @@ ipcMain.handle('open-log-tail-window', async (_, orgId, programId, environmentId
     },
     title: `${APP.LOG_TAIL_TITLE_PREFIX}${logLabel || `${service}/${name}`}`
   });
-  tailWin.webContents.openDevTools({ mode: 'detach' }); // Open DevTools to see console/errors
   const wcId = tailWin.webContents.id;
   tailWin.loadFile(path.join(__dirname, 'log-tail.html'));
   tailWin.webContents.on('did-finish-load', () => {

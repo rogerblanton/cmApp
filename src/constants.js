@@ -10,6 +10,10 @@ const API = {
   SCOPE_PLACEHOLDER: 'https://ims-na1.adobelogin.com/s/ent_cloudmgr_sdk'
 };
 
+const GITHUB_API = {
+  BASE_URL: 'https://api.github.com'
+};
+
 // --- API Paths ---
 const API_PATH = {
   TENANTS: '/api/tenants',
@@ -18,6 +22,9 @@ const API_PATH = {
   PROGRAM: (id) => `/api/program/${id}`,
   PIPELINES: (programId) => `/api/program/${programId}/pipelines`,
   PIPELINE: (programId, pipelineId) => `/api/program/${programId}/pipeline/${pipelineId}`,
+  REPOSITORIES: (programId) => `/api/program/${programId}/repositories`,
+  REPOSITORY: (programId, repositoryId) => `/api/program/${programId}/repository/${repositoryId}`,
+  REPOSITORY_BRANCHES: (programId, repositoryId) => `/api/program/${programId}/repository/${repositoryId}/branches`,
   EXECUTIONS: (programId, pipelineId) => `/api/program/${programId}/pipeline/${pipelineId}/executions`,
   EXECUTION: (programId, pipelineId) => `/api/program/${programId}/pipeline/${pipelineId}/execution`,
   EXECUTION_BY_ID: (programId, pipelineId, executionId) =>
@@ -41,7 +48,8 @@ const HAL_REL = {
   LOGS_TAIL: 'http://ns.adobe.com/adobecloud/rel/logs/tail',
   LOGS_TAIL_SHORT: 'logs/tail',
   ENVIRONMENTS: 'http://ns.adobe.com/adobecloud/rel/environments',
-  LOGS: 'http://ns.adobe.com/adobecloud/rel/logs'
+  LOGS: 'http://ns.adobe.com/adobecloud/rel/logs',
+  BRANCHES: 'http://ns.adobe.com/adobecloud/rel/branches'
 };
 
 // --- Store keys ---
@@ -129,7 +137,11 @@ const UI_LABELS = {
   TAIL_HINT: 'Tail Logs',
   DOWNLOAD_LOGS_HEADING: 'Download logs (by date)',
   TRIGGERED_BY: 'Triggered by',
-  SETTINGS: 'Settings'
+  SETTINGS: 'Settings',
+  REPOSITORY: 'Repository',
+  BRANCH: 'Branch',
+  REPO_BRANCH_HINT: 'Optional: change repo/branch before starting. Pipeline will be updated when you change.',
+  ORG_GITHUB_PAT: 'GitHub PAT (optional, for GitHub repo branch listing)'
 };
 
 // --- UI: Placeholders ---
@@ -139,7 +151,8 @@ const UI_PLACEHOLDERS = {
   CLIENT_ID: 'From Adobe Developer Console',
   CLIENT_SECRET: 'From Adobe Developer Console',
   SCOPE: API.SCOPE_PLACEHOLDER,
-  JOURNAL_ENDPOINT: 'e.g. https://cloudmanager.adobe.io/api/journal'
+  JOURNAL_ENDPOINT: 'e.g. https://cloudmanager.adobe.io/api/journal',
+  GITHUB_PAT: 'ghp_xxxxxxxxxxxx'
 };
 
 // --- UI: Welcome / Help ---
@@ -176,6 +189,7 @@ const CONFIRM = {
 
 module.exports = {
   API,
+  GITHUB_API,
   API_PATH,
   HAL_REL,
   STORE_KEYS,

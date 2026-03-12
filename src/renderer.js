@@ -509,6 +509,100 @@ function attachCmExternalLinkHandlers(container) {
   });
 }
 
+/**
+ * Detect if repo is GitHub (using type or repositoryUrl).
+ * @param {Object} repo - Adobe repo object
+ * @returns {boolean}
+ */
+function isGitHubRepo(repo) {
+  if (String(repo?.type || '').toLowerCase() === 'github') return true;
+  const url = repo?.repositoryUrl || repo?.url || repo?.htmlUrl || '';
+  return !!(url && typeof url === 'string' && url.toLowerCase().includes('github'));
+}
+
+/**
+ * Extract owner, repo, and API base URL from a GitHub repository.
+ * Supports github.com (-> api.github.com) and GitHub Enterprise (e.g. github.ibm.com -> github.ibm.com/api/v3).
+ * @param {Object} repo - Adobe repo object (repositoryUrl, url, etc.)
+ * @returns {{ owner: string, repo: string, apiBaseUrl: string } | null}
+ */
+function parseGitHubRepo(repo) {
+  if (!isGitHubRepo(repo)) return null;
+  const raw = repo?.repositoryUrl || repo?.url || repo?.htmlUrl || repo?.cloneUrl || repo?.gitUrl || '';
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.trim();
+  try {
+    if (s.startsWith('http')) {
+      const u = new URL(s);
+      const parts = u.pathname.replace(/^\/+/, '').replace(/\.git$/, '').split('/').filter(Boolean);
+      const owner = parts.length >= 2 ? parts[0] : (parts[0] || '');
+      const repoName = parts.length >= 2 ? parts[1] : (parts[0] || '');
+      if (!owner || !repoName) return null;
+      const isPublic = u.hostname === 'github.com' || u.hostname === 'api.github.com';
+      const apiBaseUrl = isPublic ? 'https://api.github.com' : `https://${u.hostname}/api/v3`;
+      return { owner, repo: repoName, apiBaseUrl };
+    }
+    if (s.startsWith('git@')) {
+      const match = s.match(/@([^:]+)[:\/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+      if (match) {
+        const host = match[1];
+        const owner = match[2];
+        const repoName = match[3];
+        const isPublic = host === 'github.com';
+        const apiBaseUrl = isPublic ? 'https://api.github.com' : `https://${host}/api/v3`;
+        return { owner, repo: repoName, apiBaseUrl };
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Fetch branches for a repo. Uses GitHub API when repo is GitHub and PAT is configured; else Adobe API.
+ */
+async function fetchBranchesForRepo(repo, programId, repoId) {
+  const gh = parseGitHubRepo(repo);
+  if (gh && api.getGitHubBranches) {
+    const orgs = await api.getOrgs();
+    const activeOrg = orgs?.find((o) => String(o.id) === String(state.activeOrgId));
+    const pat = activeOrg?.githubPat?.trim();
+    if (pat) {
+      const list = await api.getGitHubBranches(gh.owner, gh.repo, gh.apiBaseUrl, pat);
+      return Array.isArray(list) ? list : [];
+    }
+  }
+  const link = repo?._links?.[C.HAL_REL.BRANCHES];
+  const href = Array.isArray(link) ? link[0]?.href : link?.href;
+  if (href && api.getBranchesByPath) {
+    return await api.getBranchesByPath(state.activeOrgId, href) || [];
+  }
+  return await api.getBranches(state.activeOrgId, programId, repoId) || [];
+}
+
+function findBuildPhase(pipeline) {
+  const phases = pipeline?.phases || pipeline?._embedded?.phases || [];
+  return phases.find(phase => {
+    const type = (phase.type || '').toString().toUpperCase();
+    const name = (phase.name || '').toString().toUpperCase();
+    return type === 'BUILD' || name.startsWith('BUILD');
+  });
+}
+
+function buildPhasePatchBody(pipeline, repositoryId, branch) {
+  const phases = pipeline?.phases || pipeline?._embedded?.phases || [];
+  const buildPhase = findBuildPhase(pipeline);
+  if (!buildPhase) return null;
+  const updatedPhases = phases.map(phase => {
+    const type = (phase.type || '').toString().toUpperCase();
+    const name = (phase.name || '').toString().toUpperCase();
+    if (type === 'BUILD' || name.startsWith('BUILD')) {
+      return { ...phase, repositoryId: String(repositoryId), branch: String(branch) };
+    }
+    return phase;
+  });
+  return { phases: updatedPhases };
+}
+
 async function showPipelineDetail(pipeline) {
   stopCurrentExecutionPoll();
   renderBreadcrumb([
@@ -516,37 +610,77 @@ async function showPipelineDetail(pipeline) {
     { label: pipeline.name || pipeline.id }
   ]);
   detailContent.innerHTML = `<p class="welcome">${C.UI_EMPTY.LOADING_EXECUTIONS}</p>`;
-  const [executions, currentExecution] = await Promise.all([
-    api.getExecutions(state.activeOrgId, state.selectedProgram.id, pipeline.id),
-    api.getCurrentExecution(state.activeOrgId, state.selectedProgram.id, pipeline.id).catch(() => null)
+  const programId = state.selectedProgram?.id;
+  const pipelineId = pipeline.id;
+  const [executions, currentExecution, repositories, freshPipeline] = await Promise.all([
+    api.getExecutions(state.activeOrgId, programId, pipelineId),
+    api.getCurrentExecution(state.activeOrgId, programId, pipelineId).catch(() => null),
+    api.getRepositories(state.activeOrgId, programId).catch(() => []),
+    api.getPipeline(state.activeOrgId, programId, pipelineId).catch(() => pipeline)
   ]);
-  // Build unified list: executions (history) already includes running; ensure current is present if different
+  const pipelineToUse = freshPipeline || pipeline;
+  state.selectedPipeline = pipelineToUse;
+  const buildPhase = findBuildPhase(pipelineToUse);
+  const currentRepoId = buildPhase?.repositoryId ? String(buildPhase.repositoryId) : null;
+  const currentBranch = buildPhase?.branch ? String(buildPhase.branch) : null;
+  let repos = Array.isArray(repositories) ? repositories : [];
+  // Enrich all repos with full details (including repositoryUrl) so we can detect GitHub and fetch branches
+  if (repos.length > 0 && api.getRepository) {
+    const enriched = await Promise.all(
+      repos.map(async (repo) => {
+        try {
+          const full = await api.getRepository(state.activeOrgId, programId, String(repo.id));
+          return full ? { ...repo, ...full } : repo;
+        } catch (_) {
+          return repo;
+        }
+      })
+    );
+    repos = enriched;
+  }
+  const effectiveRepoId = currentRepoId && repos.some(repo => String(repo.id) === currentRepoId)
+    ? currentRepoId
+    : (repos[0]?.id ? String(repos[0].id) : null);
+  const effectiveRepo = repos.find(r => String(r.id) === effectiveRepoId);
+  let branches = [];
+  if (effectiveRepo) {
+    try {
+      branches = await fetchBranchesForRepo(effectiveRepo, programId, effectiveRepoId);
+    } catch (_) {}
+  }
+  const branchNames = Array.isArray(branches)
+    ? branches.map(b => b.name || b.ref || b.branch || String(b)).filter(Boolean)
+    : [];
+  const effectiveBranch = currentBranch && branchNames.includes(currentBranch)
+    ? currentBranch
+    : (branchNames[0] || currentBranch || '');
+
   const seen = new Set();
   const allExecutions = [];
   if (currentExecution) {
     allExecutions.push({ ...currentExecution, _isCurrent: true });
     seen.add(String(currentExecution.id));
   }
-  executions.forEach(e => {
-    if (seen.has(String(e.id))) return;
-    seen.add(String(e.id));
-    allExecutions.push(e);
+  executions.forEach(exec => {
+    if (seen.has(String(exec.id))) return;
+    seen.add(String(exec.id));
+    allExecutions.push(exec);
   });
   state.executions = allExecutions;
-  const execHtml = allExecutions.map(e => {
-    const isCurrent = currentExecution && String(e.id) === String(currentExecution.id);
-    const status = e.status || '—';
-    const userValue = (e.user && e.trigger !== 'ON_COMMIT') ? String(e.user) : null;
+  const execHtml = allExecutions.map(exec => {
+    const isCurrent = currentExecution && String(exec.id) === String(currentExecution.id);
+    const status = exec.status || '—';
+    const userValue = (exec.user && exec.trigger !== 'ON_COMMIT') ? String(exec.user) : null;
     return `
       <div class="execution-item status-${status}">
         <div class="execution-item-content">
-          <div class="id">${e.id}${isCurrent ? ' <span class="badge">Current</span>' : ''}</div>
+          <div class="id">${exec.id}${isCurrent ? ' <span class="badge">Current</span>' : ''}</div>
           <div class="status">${status}</div>
-          <div class=""><a href="https://experience.adobe.com/#/cloud-manager/pipelineexecution.html/program/${state.selectedProgram?.id}/pipeline/${state.selectedPipeline?.id}/execution/${e.id}" target="_blank" class="cm-external-link">Link to Cloud Manager Browser</a></div>
+          <div class=""><a href="https://experience.adobe.com/#/cloud-manager/pipelineexecution.html/program/${programId}/pipeline/${pipelineId}/execution/${exec.id}" target="_blank" class="cm-external-link">Link to Cloud Manager Browser</a></div>
           ${userValue ? `<div class="subtitle execution-user">${C.UI_LABELS.TRIGGERED_BY}: ${escapeHtml(userValue)}</div>` : ''}
-          ${e.createdAt ? `<div class="subtitle">${new Date(e.createdAt).toLocaleString()}</div>` : ''}
+          ${exec.createdAt ? `<div class="subtitle">${new Date(exec.createdAt).toLocaleString()}</div>` : ''}
         </div>
-        <button type="button" class="execution-details-btn" data-id="${e.id}" title="View details" aria-label="View details">
+        <button type="button" class="execution-details-btn" data-id="${exec.id}" title="View details" aria-label="View details">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
             <path d="M21 21l-4.35-4.35"/>
@@ -555,30 +689,126 @@ async function showPipelineDetail(pipeline) {
       </div>
     `;
   }).join('');
+
+  function repoDisplayName(repo) {
+    return repo.repo || repo.name || repo.repositoryName || repo.title || repo.slug || repo.repositoryUrl?.split('/').pop()?.replace(/\.git$/, '') || String(repo.id);
+  }
+  function branchDisplayName(ref) {
+    const raw = String(ref);
+    if (raw.startsWith('refs/heads/')) return raw.slice(11);
+    if (raw.startsWith('refs/tags/')) return raw.slice(10);
+    return raw;
+  }
+  const repoOptions = repos.map(repo => {
+    const id = String(repo.id);
+    const label = repoDisplayName(repo);
+    return `<option value="${escapeHtml(id)}" ${id === effectiveRepoId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+  const branchOptions = branchNames.map(b => {
+    const value = String(b);
+    const label = branchDisplayName(b);
+    return `<option value="${escapeHtml(value)}" ${value === effectiveBranch ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+
+  const hasBuildPhase = !!findBuildPhase(pipeline);
+  const repoBranchSection = hasBuildPhase && repos.length > 0
+    ? `
+    <div class="repo-branch-section">
+      <p class="repo-branch-hint">${C.UI_LABELS.REPO_BRANCH_HINT}</p>
+      <div class="repo-branch-row">
+        <label>${C.UI_LABELS.REPOSITORY}:</label>
+        <select id="repoSelect" class="input repo-select">
+          ${repoOptions}
+        </select>
+        <label>${C.UI_LABELS.BRANCH}:</label>
+        <select id="branchSelect" class="input branch-select">
+          ${branchOptions}
+        </select>
+      </div>
+    </div>`
+    : '';
+
   detailContent.innerHTML = `
     <div class="meta">
-      <h3>${pipeline.name || pipeline.id}</h3>
-      <p><strong>ID:</strong> ${pipeline.id}</p>
-      <p><strong>Type:</strong> ${pipeline.type || '—'}</p>
+      <h3>${escapeHtml(pipeline.name || pipeline.id)}</h3>
+      <p><strong>ID:</strong> ${escapeHtml(String(pipeline.id))}</p>
+      <p><strong>Type:</strong> ${escapeHtml(pipeline.type || '—')}</p>
     </div>
+    ${repoBranchSection}
     <div class="actions">
       <button id="startPipelineBtn" class="btn" ${currentExecution ? 'disabled title="An execution is currently running"' : ''}>${C.UI_LABELS.START_PIPELINE}</button>
     </div>
     <h3>${C.UI_LABELS.EXECUTIONS}</h3>
     <div class="execution-list">${execHtml || `<p>${C.UI_EMPTY.NO_EXECUTIONS}</p>`}</div>
-    <pre>${JSON.stringify(pipeline, null, 2)}</pre>
+    <pre>${escapeHtml(JSON.stringify(pipeline, null, 2))}</pre>
   `;
+
+  if (hasBuildPhase && repos.length > 0) {
+    let currentPipeline = pipelineToUse;
+    const repoSelect = detailContent.querySelector('#repoSelect');
+    const branchSelect = detailContent.querySelector('#branchSelect');
+
+    async function doPatch(newRepoId, newBranch) {
+      const patchBody = buildPhasePatchBody(currentPipeline, newRepoId, newBranch);
+      if (!patchBody) return;
+      clearError();
+      try {
+        currentPipeline = await api.patchPipeline(state.activeOrgId, programId, pipelineId, patchBody);
+        state.selectedPipeline = currentPipeline;
+      } catch (error) {
+        showError(error?.message ?? 'Failed to update pipeline');
+      }
+    }
+
+    async function onRepoChange() {
+      const newRepoId = repoSelect.value;
+      if (!newRepoId) return;
+      const selectedRepo = repos.find(r => String(r.id) === newRepoId);
+      branchSelect.disabled = true;
+      branchSelect.innerHTML = '<option value="">Loading branches…</option>';
+      branchSelect.onchange = null;
+      try {
+        const newBranches = await fetchBranchesForRepo(selectedRepo, programId, newRepoId);
+        const branchList = Array.isArray(newBranches) ? newBranches : [];
+        const names = branchList.map(b => {
+          if (typeof b === 'string') return b;
+          return b?.name ?? b?.ref ?? b?.branch ?? '';
+        }).filter(Boolean);
+        const newBranch = names[0] || '';
+        branchSelect.innerHTML = names.length
+          ? names.map(n => `<option value="${escapeHtml(String(n))}">${escapeHtml(branchDisplayName(n))}</option>`).join('')
+          : '<option value="">— No branches —</option>';
+        if (newBranch) branchSelect.value = newBranch;
+        branchSelect.disabled = false;
+        branchSelect.onchange = onBranchChange;
+      } catch (error) {
+        branchSelect.innerHTML = '<option value="">— Error loading branches —</option>';
+        branchSelect.disabled = false;
+        branchSelect.onchange = onBranchChange;
+        showError(error?.message ?? 'Failed to load branches');
+      }
+    }
+
+    function onBranchChange() {
+      // No-op: repo/branch are only applied when Start Pipeline is clicked
+    }
+
+    repoSelect.onchange = onRepoChange;
+    branchSelect.onchange = onBranchChange;
+  }
+
   detailContent.querySelectorAll('.execution-details-btn').forEach(btn => {
     btn.onclick = () => selectExecution(btn.dataset.id);
   });
   detailContent.querySelector('#startPipelineBtn').onclick = () => startPipeline();
+  attachCmExternalLinkHandlers(detailContent);
 
   if (currentExecution) {
     stopCurrentExecutionPoll();
     currentExecutionPollTimer = setInterval(async () => {
       try {
-        const current = await api.getCurrentExecution(state.activeOrgId, state.selectedProgram.id, pipeline.id).catch(() => null);
-        if (!current && state.selectedPipeline?.id === pipeline.id) {
+        const current = await api.getCurrentExecution(state.activeOrgId, programId, pipelineId).catch(() => null);
+        if (!current && state.selectedPipeline?.id === pipelineId) {
           stopCurrentExecutionPoll();
           const btn = detailContent.querySelector('#startPipelineBtn');
           if (btn) {
@@ -749,7 +979,22 @@ async function startPipeline() {
   if (!state.activeOrgId || !state.selectedProgram || !state.selectedPipeline) return;
   clearError();
   try {
-    await api.startPipeline(state.activeOrgId, state.selectedProgram.id, state.selectedPipeline.id, { mode: 'NORMAL' });
+    // Patch pipeline with selected repo/branch from dropdowns before starting (if present)
+    const repoSelect = detailContent.querySelector('#repoSelect');
+    const branchSelect = detailContent.querySelector('#branchSelect');
+    let pipelineToStart = state.selectedPipeline;
+    if (repoSelect && branchSelect) {
+      const repoId = repoSelect.value;
+      const branch = branchSelect.value;
+      if (repoId && branch) {
+        const patchBody = buildPhasePatchBody(pipelineToStart, repoId, branch);
+        if (patchBody) {
+          pipelineToStart = await api.patchPipeline(state.activeOrgId, state.selectedProgram.id, pipelineToStart.id, patchBody);
+          state.selectedPipeline = pipelineToStart;
+        }
+      }
+    }
+    await api.startPipeline(state.activeOrgId, state.selectedProgram.id, pipelineToStart.id, { mode: 'NORMAL' });
     await selectPipeline(state.selectedPipeline);
   } catch (error) {
     showError(error?.message ?? 'Unknown error');
@@ -790,6 +1035,8 @@ function openOrgModal(editOrg = null) {
     document.getElementById('orgClientSecret').value = editOrg.clientSecret || '';
     document.getElementById('orgScope').value = editOrg.scope || '';
     document.getElementById('orgJournalEndpoint').value = editOrg.journalEndpoint || '';
+    const orgGithubPatEl = document.getElementById('orgGithubPat');
+    if (orgGithubPatEl) orgGithubPatEl.value = editOrg.githubPat || '';
   } else {
     orgForm.reset();
     document.getElementById('orgId').value = '';
@@ -809,7 +1056,8 @@ orgForm.addEventListener('submit', async (e) => {
     clientId: document.getElementById('orgClientId').value.trim(),
     clientSecret: document.getElementById('orgClientSecret').value.trim(),
     scope: document.getElementById('orgScope').value.trim() || undefined,
-    journalEndpoint: document.getElementById('orgJournalEndpoint').value.trim() || undefined
+    journalEndpoint: document.getElementById('orgJournalEndpoint').value.trim() || undefined,
+    githubPat: (document.getElementById('orgGithubPat')?.value || '').trim() || undefined
   };
   try {
     await api.saveOrg(org);

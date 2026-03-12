@@ -1,4 +1,4 @@
-const { API, API_PATH, HAL_REL, UI_ERRORS } = require('./constants');
+const { API, GITHUB_API, API_PATH, HAL_REL, UI_ERRORS } = require('./constants');
 
 async function getAccessToken(org) {
   const params = new URLSearchParams({
@@ -82,6 +82,44 @@ async function getPipelines(org, token, programId, type) {
 
 async function getPipeline(org, token, programId, pipelineId) {
   return apiRequest(org, token, 'GET', API_PATH.PIPELINE(programId, pipelineId));
+}
+
+async function patchPipeline(org, token, programId, pipelineId, body) {
+  return apiRequest(org, token, 'PATCH', API_PATH.PIPELINE(programId, pipelineId), body);
+}
+
+function extractRepositories(list) {
+  const embedded = list?._embedded;
+  if (embedded) {
+    const arr = embedded.repositories ?? embedded.repos ?? embedded['http://ns.adobe.com/adobecloud/rel/repositories'];
+    if (Array.isArray(arr)) return arr;
+  }
+  return list?.repositories ?? (Array.isArray(list) ? list : []);
+}
+
+async function getRepositories(org, token, programId) {
+  const path = `${API_PATH.REPOSITORIES(programId)}?limit=500`;
+  const list = await apiRequest(org, token, 'GET', path);
+  return extractRepositories(list);
+}
+
+function extractBranches(list) {
+  const embedded = list?._embedded;
+  if (embedded) {
+    const arr = embedded.branches ?? embedded['http://ns.adobe.com/adobecloud/rel/branches'];
+    if (Array.isArray(arr)) return arr;
+  }
+  return list?.branches ?? (Array.isArray(list) ? list : []);
+}
+
+async function getBranches(org, token, programId, repositoryId) {
+  const path = API_PATH.REPOSITORY_BRANCHES(programId, repositoryId);
+  const url = `${API.BASE_URL}${path}`;
+  console.log('[API] getBranches GET', url);
+  const list = await apiRequest(org, token, 'GET', path);
+  const branches = extractBranches(list);
+  console.log('[API] getBranches response:', Array.isArray(branches) ? branches.length : 0, 'branches');
+  return branches;
 }
 
 // Executions
@@ -252,12 +290,125 @@ async function getJournalEvents(org, token, after) {
   return data;
 }
 
+// Repositories & Branches (for pipeline repo/branch selection)
+function extractRepositories(list) {
+  const embedded = list?._embedded;
+  if (embedded) {
+    const arr = embedded.repositories ?? embedded.repos;
+    if (Array.isArray(arr)) return arr;
+  }
+  return list?.repositories ?? (Array.isArray(list) ? list : []);
+}
+
+function extractBranches(list) {
+  const embedded = list?._embedded;
+  if (embedded) {
+    const arr = embedded.branches ?? embedded['http://ns.adobe.com/adobecloud/rel/branches'];
+    if (Array.isArray(arr)) return arr;
+  }
+  return list?.branches ?? (Array.isArray(list) ? list : []);
+}
+
+async function getRepositories(org, token, programId) {
+  const path = `${API_PATH.REPOSITORIES(programId)}?limit=100`;
+  const list = await apiRequest(org, token, 'GET', path);
+  return extractRepositories(list);
+}
+
+async function getRepository(org, token, programId, repositoryId) {
+  return apiRequest(org, token, 'GET', API_PATH.REPOSITORY(programId, repositoryId));
+}
+
+async function getBranches(org, token, programId, repositoryId) {
+  const path = API_PATH.REPOSITORY_BRANCHES(programId, repositoryId);
+  const url = `${API.BASE_URL}${path}`;
+  console.log('[API] getBranches fetch', url);
+  try {
+    const list = await apiRequest(org, token, 'GET', path);
+    const branches = extractBranches(list);
+    console.log('[API] getBranches OK', { url, count: Array.isArray(branches) ? branches.length : 0 });
+    return branches;
+  } catch (err) {
+    console.error('[API] getBranches error', { url, message: err?.message });
+    throw err;
+  }
+}
+
+/**
+ * Fetch branches using the path from repository's _links['http://ns.adobe.com/adobecloud/rel/branches'].
+ * Use this when the repo has the branches link; fall back to getBranches otherwise.
+ * @param {Object} org - Org
+ * @param {string} token - Access token
+ * @param {string} path - Path from repo._links (e.g. /api/program/8603/repository/191760/branches)
+ */
+async function getBranchesByPath(org, token, path) {
+  if (!path || typeof path !== 'string') throw new Error('Branches path is required');
+  const requestPath = path.startsWith('http') ? new URL(path).pathname + (new URL(path).search || '') : path;
+  const url = `${API.BASE_URL}${requestPath}`;
+  console.log('[API] getBranchesByPath fetch', url);
+  try {
+    const list = await apiRequest(org, token, 'GET', requestPath);
+    const branches = extractBranches(list);
+    console.log('[API] getBranchesByPath OK', { url, count: Array.isArray(branches) ? branches.length : 0 });
+    return branches;
+  } catch (err) {
+    console.error('[API] getBranchesByPath error', { url, message: err?.message });
+    throw err;
+  }
+}
+
+async function patchPipeline(org, token, programId, pipelineId, patchBody) {
+  return apiRequest(org, token, 'PATCH', API_PATH.PIPELINE(programId, pipelineId), patchBody);
+}
+
+/**
+ * Fetch all branches from GitHub API with pagination. Use when repo is a GitHub repository.
+ * @param {string} pat - GitHub Personal Access Token (repo scope)
+ * @param {string} owner - GitHub org/user
+ * @param {string} repo - GitHub repo name
+ * @param {string} [apiBaseUrl] - API base (default: api.github.com; for Enterprise use https://host/api/v3)
+ * @returns {Promise<Array<{name: string}>>}
+ */
+async function getGitHubBranches(pat, owner, repo, apiBaseUrl) {
+  const base = apiBaseUrl || GITHUB_API.BASE_URL;
+  const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`;
+  const headers = {
+    'Authorization': `Bearer ${pat}`,
+    'Accept': 'application/vnd.github.v3+json'
+  };
+  const allBranches = [];
+  let url = `${base}${path}?per_page=100`;
+  while (url) {
+    const res = await fetch(url, { method: 'GET', headers });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`GitHub API ${res.status}: ${text || res.statusText}`);
+    }
+    const data = text ? JSON.parse(text) : [];
+    const page = Array.isArray(data) ? data : [];
+    allBranches.push(...page);
+    url = null;
+    const link = res.headers.get('Link');
+    if (link) {
+      const nextMatch = link.match(/<([^>]+)>;\s*rel="next"/);
+      if (nextMatch) url = nextMatch[1];
+    }
+  }
+  return allBranches;
+}
+
 module.exports = {
   getAccessToken,
   getPrograms,
   getProgram,
   getPipelines,
   getPipeline,
+  getRepositories,
+  getRepository,
+  getBranches,
+  getBranchesByPath,
+  getGitHubBranches,
+  patchPipeline,
   getExecutions,
   getCurrentExecution,
   getExecution,
